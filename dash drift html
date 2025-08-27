@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dash Drift — Single-file HTML Game</title>
+  <style>
+    /* Reset & layout */
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#081124;color:#e6f0ff}
+    .wrapper{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box}
+
+    /* Game container */
+    .game-card{background:linear-gradient(180deg,#0b1320 0%,#081124 100%);width:900px;max-width:100%;border-radius:14px;box-shadow:0 10px 30px rgba(2,8,23,0.6);padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    header h1{font-size:18px;margin:0}
+    header .controls{display:flex;gap:8px;align-items:center}
+    button{background:#0ea5a4;border:none;padding:8px 12px;border-radius:8px;color:white;font-weight:600;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.08)}
+    .meta{font-size:13px;color:#9fb0d6}
+
+    /* Canvas styling */
+    #gameCanvas{display:block;border-radius:8px;background:linear-gradient(#7ad2ff10,#6a8cff05);width:100%;height:430px}
+
+    /* Overlay messages */
+    .overlay{position:relative;margin-top:-430px;height:430px;pointer-events:none}
+    .center-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+    .panel{background:rgba(4,9,18,0.6);padding:12px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);text-align:center}
+    .hint{font-size:13px;color:#bcd6ff;margin-top:6px}
+
+    footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:#9fb0d6;font-size:13px}
+
+    /* Responsive tweaks */
+    @media (max-width:520px){#gameCanvas{height:360px}}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="game-card">
+      <header>
+        <h1>Dash Drift</h1>
+        <div class="controls">
+          <div class="meta">Score: <span id="score">0</span></div>
+          <button id="startBtn">Start</button>
+          <button id="muteBtn" class="secondary">Mute</button>
+        </div>
+      </header>
+
+      <div style="position:relative">
+        <canvas id="gameCanvas" width="900" height="430"></canvas>
+        <div class="overlay">
+          <div id="message" class="center-text" style="display:none">
+            <div class="panel">
+              <div id="msgTitle" style="font-weight:700;font-size:16px">Paused</div>
+              <div id="msgBody" class="hint">Press Space to jump. Click Start to play.</div>
+              <div style="margin-top:8px"><button id="resumeBtn">Resume</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer>
+        <div>Controls: <strong>Space / Up Arrow</strong> to jump, <strong>Down</strong> to duck</div>
+        <div>Built as a single HTML file • No libraries</div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    /* Dash Drift — single-file HTML game
+       - Canvas runner with jump, obstacles, score, and restart
+       - Mobile touch support: tap to jump, hold to duck
+    */
+
+    // DOM
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const resumeBtn = document.getElementById('resumeBtn');
+    const message = document.getElementById('message');
+    const msgTitle = document.getElementById('msgTitle');
+    const msgBody = document.getElementById('msgBody');
+    const scoreEl = document.getElementById('score');
+    const muteBtn = document.getElementById('muteBtn');
+
+    // Game state
+    let w = canvas.width, h = canvas.height;
+    let running = false, paused = false, gameOver = false;
+    let gravity = 0.9;
+    let player = {x:80,y:0,w:42,h:42,vy:0,jumping:false,ducking:false};
+    let groundY = h - 80;
+    let obstacles = [];
+    let spawnTimer = 0;
+    let speed = 5; // world speed
+    let baseSpeed = 5;
+    let score = 0;
+    let highScore = 0;
+
+    // Resize canvas responsively while keeping internal resolution
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(rect.width * ratio);
+      canvas.height = Math.floor(rect.height * ratio);
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      w = canvas.width / ratio; h = canvas.height / ratio;
+      groundY = h - 80;
+      if(player) player.y = groundY - player.h;
+    }
+    window.addEventListener('resize', resize);
+
+    // Basic sounds (WebAudio) - small beep effects
+    let audioCtx = null; let soundOn = true;
+    function beep(freq=440, dur=0.06, vol=0.12){
+      if(!soundOn) return; try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type='sine'; o.frequency.value = freq; g.gain.value = vol;
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+        o.stop(audioCtx.currentTime + dur + 0.01);
+      }catch(e){}
+    }
+
+    muteBtn.addEventListener('click', ()=>{soundOn = !soundOn; muteBtn.textContent = soundOn? 'Mute':'Unmute'});
+
+    // Input
+    const keys = {};
+    window.addEventListener('keydown', (e)=>{if(e.repeat) return; keys[e.code]=true; if(e.code==='Space' || e.code==='ArrowUp') e.preventDefault();});
+    window.addEventListener('keyup', (e)=>{keys[e.code]=false; if(e.code==='Space' || e.code==='ArrowUp') e.preventDefault();});
+
+    // Touch controls
+    let touchDown=false; canvas.addEventListener('touchstart', (e)=>{e.preventDefault(); touchDown=true; handleJump();});
+    canvas.addEventListener('touchend', (e)=>{e.preventDefault(); touchDown=false;});
+
+    function handleJump(){
+      if(gameOver){reset(); start(); return}
+      if(!running) {start(); return}
+      if(!player.jumping){player.vy = -14; player.jumping = true; beep(880,0.06,0.08)}
+    }
+
+    // Start, pause, reset
+    startBtn.addEventListener('click', ()=>{ if(!running) start(); else {paused = !paused; showMessage(paused? 'Paused':'Resumed', paused? 'Game paused':'') }});
+    resumeBtn.addEventListener('click', ()=>{paused=false; hideMessage();});
+
+    function start(){running=true; paused=false; gameOver=false; obstacles=[]; score=0; speed = baseSpeed; player.y = groundY - player.h; player.vy=0; player.jumping=false; spawnTimer=0; hideMessage(); raf();}
+    function reset(){running=false; paused=false; gameOver=false; obstacles=[]; score=0; spawnTimer=0;}
+    function endGame(){gameOver=true; running=false; showMessage('Game Over','Score: '+score+' • Click Start to play again'); beep(120,0.4,0.12);}
+
+    function showMessage(title, body){msgTitle.textContent = title; msgBody.textContent = body; message.style.display='flex'}
+    function hideMessage(){message.style.display='none'}
+
+    // Obstacles
+    function spawnObstacle(){
+      const hgt = 30 + Math.random()*50;
+      const type = Math.random() > 0.7 ? 'tall' : 'low';
+      obstacles.push({x: w + 40, y: groundY - hgt, w: 20 + Math.random()*30, h: hgt, passed:false, type});
+    }
+
+    // Game loop
+    let last = 0;
+    function raf(t){ if(!running) return; if(paused) {requestAnimationFrame(raf); return} const dt = Math.min(40,(t-last)||16)/16; last = t; update(dt); render(); requestAnimationFrame(raf);} 
+
+    function update(dt){
+      // input jump
+      if((keys['Space'] || keys['ArrowUp']) && !player.jumping){player.vy = -14; player.jumping = true; beep(880,0.06,0.08)}
+      // duck
+      player.ducking = !!keys['ArrowDown'];
+
+      // physics
+      player.vy += gravity * dt * 0.9;
+      player.y += player.vy * dt;
+      if(player.y + player.h >= groundY){player.y = groundY - player.h; player.vy = 0; player.jumping=false}
+
+      // obstacles movement & spawn
+      spawnTimer -= dt;
+      if(spawnTimer <= 0){spawnObstacle(); spawnTimer = 50 + Math.random()*60 - Math.min(score/20,35)}
+      for(let i=obstacles.length-1;i>=0;i--){const o=obstacles[i]; o.x -= speed*dt; if(o.x + o.w < -50) obstacles.splice(i,1); 
+        // collision
+        if(!o.passed && o.x + o.w < player.x){score++; o.passed=true; beep(1200,0.03,0.03); if(score % 5 === 0) speed += 0.6}
+        if(rectsOverlap(player, o)){endGame();}
+      }
+
+      // scoring gradually
+      scoreEl.textContent = score;
+      // small speed increase
+      speed = baseSpeed + Math.floor(score/5) * 0.6;
+    }
+
+    function rectsOverlap(a,b){
+      const ax = a.x, ay=a.y, aw=a.w, ah=a.h;
+      const bx = b.x, by=b.y, bw=b.w, bh=b.h;
+      return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+
+    // Render
+    function render(){
+      // clear
+      ctx.clearRect(0,0,w,h);
+
+      // sky gradient
+      const g = ctx.createLinearGradient(0,0,0,h);
+      g.addColorStop(0,'#0a1220'); g.addColorStop(1,'#051025');
+      ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+      // parallax lines / road
+      drawRoad();
+
+      // player
+      ctx.save();
+      ctx.fillStyle = '#4ee6c0';
+      ctx.fillRect(player.x, player.y, player.w, player.h);
+      // eye detail
+      ctx.fillStyle = '#022'; ctx.fillRect(player.x + 8, player.y + 12, 8, 8);
+      ctx.restore();
+
+      // obstacles
+      ctx.fillStyle = '#f16d6d';
+      obstacles.forEach(o=>{ctx.fillRect(o.x, o.y, o.w, o.h);});
+
+      // ground
+      ctx.fillStyle = '#0b1a2a'; ctx.fillRect(0, groundY, w, h-groundY);
+
+      // HUD
+      ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(12,12,120,34);
+      ctx.fillStyle = '#dff6ff'; ctx.font = '16px system-ui,Arial'; ctx.fillText('Score: '+score, 20, 34);
+    }
+
+    function drawRoad(){
+      // simple dashed road to give speed illusion
+      ctx.save();
+      ctx.translate(0,0);
+      const laneY = groundY - 22;
+      ctx.fillStyle = '#0b1a2a'; ctx.fillRect(0, laneY, w, 8);
+      ctx.fillStyle = '#ffffff22';
+      const dashW = 30; let offset = (performance.now()/20) % (dashW*2);
+      for(let x = -offset; x < w; x += dashW*2){ctx.fillRect(x, laneY+2, dashW, 4);} 
+      ctx.restore();
+    }
+
+    // initial setup
+    resize();
+    showMessage('Welcome to Dash Drift','Click Start or press Space to begin.');
+
+    // Auto-start handler for keyboard space
+    window.addEventListener('keydown', (e)=>{ if(e.code==='Space'){ e.preventDefault(); if(!running && !gameOver) start(); }});
+
+    // Make Start button toggle text
+    const observer = new MutationObserver(()=>{startBtn.textContent = running ? 'Playing...' : 'Start'});
+    observer.observe(startBtn, {childList:true,subtree:true});
+    // Keep button label accurate at load
+    startBtn.textContent = 'Start';
+
+    // Accessibility: let user click canvas to jump
+    canvas.addEventListener('click', ()=>{ if(!running) start(); else if(gameOver){reset();start()} else {handleJump()} });
+
+  </script>
+</body>
+</html>
