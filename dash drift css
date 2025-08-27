@@ -1,0 +1,81 @@
+/* Dash Drift — External CSS (styles.css)
+   Drop this into a separate file and link with: <link rel="stylesheet" href="styles.css">
+   Matches class names and IDs used in the single-file Dash Drift HTML.
+*/
+:root{
+  --bg-1:#081124;
+  --bg-2:#0b1320;
+  --card-bg:linear-gradient(180deg,#0b1320 0%,#081124 100%);
+  --accent:#0ea5a4;
+  --muted:#9fb0d6;
+  --panel-bg:rgba(4,9,18,0.6);
+  --glass-border:rgba(255,255,255,0.04);
+  --player:#4ee6c0;
+  --danger:#f16d6d;
+  --hud-bg:rgba(255,255,255,0.06);
+}
+
+/* Reset / layout */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg-1);color:#e6f0ff}
+.wrapper{display:flex;align-items:center;justify-content:center;height:100%;padding:20px}
+
+/* Card */
+.game-card{background:var(--card-bg);width:900px;max-width:100%;border-radius:14px;box-shadow:0 10px 30px rgba(2,8,23,0.6);padding:18px}
+
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+header h1{font-size:18px;margin:0}
+header .controls{display:flex;gap:8px;align-items:center}
+.meta{font-size:13px;color:var(--muted)}
+
+button{background:var(--accent);border:none;padding:8px 12px;border-radius:8px;color:white;font-weight:600;cursor:pointer}
+button.secondary{background:transparent;border:1px solid var(--glass-border)}
+button:active{transform:translateY(1px)}
+
+/* Canvas container */
+#gameCanvas{display:block;border-radius:8px;background:linear-gradient(#7ad2ff10,#6a8cff05);width:100%;height:430px}
+
+/* Overlay */
+.overlay{position:relative;margin-top:-430px;height:430px;pointer-events:none}
+.center-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.panel{background:var(--panel-bg);padding:12px 16px;border-radius:10px;border:1px solid var(--glass-border);text-align:center}
+.hint{font-size:13px;color:#bcd6ff;margin-top:6px}
+
+footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+
+/* HUD */
+.hud{position:absolute;left:12px;top:12px;background:var(--hud-bg);padding:8px 12px;border-radius:8px}
+.hud .score{font-weight:700}
+
+/* responsive */
+@media (max-width:780px){
+  .game-card{padding:12px}
+  header h1{font-size:16px}
+}
+@media (max-width:520px){
+  #gameCanvas{height:360px}
+  .game-card{border-radius:10px}
+}
+
+/* Visual polish for in-canvas drawings (helps overlay alignment) */
+.canvas-shadow{
+  box-shadow: 0 8px 20px rgba(2,8,23,0.55);
+  border-radius:8px;
+  overflow:hidden;
+}
+
+/* Utility */
+.hidden{display:none}
+.center{display:flex;align-items:center;justify-content:center}
+
+/* Accessibility focus styles */
+button:focus{outline:3px solid rgba(14,165,164,0.18);outline-offset:2px}
+
+/* Optional: small animation for start message */
+@keyframes floatIn{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+.panel{animation:floatIn .28s ease}
+
+/* Optional styles for mobile duck indicator */
+.mobile-duck{position:absolute;right:12px;bottom:12px;background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;font-size:12px;color:var(--muted)}
+
+/* End of file */
