@@ -1,0 +1,99 @@
+/* Dash Drift JavaScript (game.js)
+   Link with: <script src="game.js"></script>
+   This file contains all game logic for Dash Drift.
+*/
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+const message = document.getElementById('message');
+const msgTitle = document.getElementById('msgTitle');
+const msgBody = document.getElementById('msgBody');
+const scoreEl = document.getElementById('score');
+const muteBtn = document.getElementById('muteBtn');
+
+let w = canvas.width, h = canvas.height;
+let running = false, paused = false, gameOver = false;
+let gravity = 0.9;
+let player = {x:80,y:0,w:42,h:42,vy:0,jumping:false};
+let groundY = h - 80;
+let obstacles = [];
+let spawnTimer = 0;
+let speed = 5;
+let baseSpeed = 5;
+let score = 0;
+
+function resize(){
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(rect.width * ratio);
+  canvas.height = Math.floor(rect.height * ratio);
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  w = canvas.width/ratio; h = canvas.height/ratio;
+  groundY = h - 80;
+  player.y = groundY - player.h;
+}
+window.addEventListener('resize',resize);
+
+let audioCtx = null; let soundOn = true;
+function beep(freq=440,dur=0.06,vol=0.12){
+  if(!soundOn) return;
+  try{
+    if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    o.type='sine';o.frequency.value=freq;g.gain.value=vol;
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+dur);
+    o.stop(audioCtx.currentTime+dur+0.01);
+  }catch(e){}
+}
+muteBtn.addEventListener('click',()=>{soundOn=!soundOn;muteBtn.textContent=soundOn?'Mute':'Unmute'});
+
+const keys={};
+window.addEventListener('keydown',e=>{if(e.repeat)return;keys[e.code]=true;if(e.code==='Space'||e.code==='ArrowUp')e.preventDefault();});
+window.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='Space'||e.code==='ArrowUp')e.preventDefault();});
+
+canvas.addEventListener('touchstart',e=>{e.preventDefault();handleJump();});
+canvas.addEventListener('touchend',e=>{e.preventDefault();});
+
+function handleJump(){
+  if(gameOver){reset();start();return}
+  if(!running){start();return}
+  if(!player.jumping){player.vy=-14;player.jumping=true;beep(880,0.06,0.08)}
+}
+
+startBtn.addEventListener('click',()=>{
+  if(!running)start();else{paused=!paused;showMessage(paused?'Paused':'Resumed',paused?'Game paused':'')}
+});
+resumeBtn.addEventListener('click',()=>{paused=false;hideMessage()});
+
+function start(){
+  running=true;paused=false;gameOver=false;obstacles=[];score=0;speed=baseSpeed;
+  player.y=groundY-player.h;player.vy=0;player.jumping=false;spawnTimer=0;
+  hideMessage();raf();
+}
+function reset(){running=false;paused=false;gameOver=false;obstacles=[];score=0;spawnTimer=0;}
+function endGame(){gameOver=true;running=false;showMessage('Game Over','Score: '+score+' • Click Start to play again');beep(120,0.4,0.12)}
+
+function showMessage(t,b){msgTitle.textContent=t;msgBody.textContent=b;message.style.display='flex'}
+function hideMessage(){message.style.display='none'}
+
+function spawnObstacle(){
+  const hgt=30+Math.random()*50;
+  obstacles.push({x:w+40,y:groundY-hgt,w:20+Math.random()*30,h:hgt,passed:false});
+}
+
+let last=0;
+function raf(t){
+  if(!running)return;
+  if(paused){requestAnimationFrame(raf);return}
+  const dt=Math.min(40,(t-last)||16)/16;last=t;
+  update(dt);render();requestAnimationFrame(raf);
+}
+
+function update(dt){
+  if((keys['Space']||keys['ArrowUp'])&&!player.jumping){player.vy=-14;player.jumping=true;beep(880,0.06,0.08)}
+  player.vy+=gravity*dt*0.9;player.y+=player.vy*dt;
+  if(player.y+player.h>=groundY){player.y=groundY-player.h
